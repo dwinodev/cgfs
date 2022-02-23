@@ -17,13 +17,6 @@ fn main() {
     let mut scene = Scene::new();
 
     scene.spheres.push(Sphere::new(
-        Vec3::new(0.0, -5001.0, 0.0),
-        5000.0,
-        Rgb::from_ints(255, 255, 0),
-        1000,
-    ));
-
-    scene.spheres.push(Sphere::new(
         Vec3::new(0.0, -1.0, 3.0),
         1.0,
         Rgb::from_ints(255, 0, 0),
@@ -42,6 +35,13 @@ fn main() {
         1.0,
         Rgb::from_ints(0, 255, 0),
         10,
+    ));
+
+    scene.spheres.push(Sphere::new(
+        Vec3::new(0.0, -5001.0, 0.0),
+        5000.0,
+        Rgb::from_ints(255, 255, 0),
+        1000,
     ));
 
     scene.lights.push(Light::new(
@@ -117,19 +117,21 @@ fn canvas_to_viewport(x: i32, y: i32) -> Vec3 {
 }
 
 fn trace_ray(o: Vec3, d: Vec3, t_min: f64, t_max: f64, scene: &Scene) -> Rgb {
-    let mut closest_t = t_max;
-    let mut closest_sphere = None;
-    for sphere in &scene.spheres {
-        let (t1, t2) = intersect_ray_sphere(o, d, &sphere);
-        if t1 > t_min && t1 < t_max && t1 < closest_t {
-            closest_t = t1;
-            closest_sphere = Some(sphere);
-        }
-        if t2 > t_min && t2 < t_max && t2 < closest_t {
-            closest_t = t2;
-            closest_sphere = Some(sphere);
-        }
-    }
+    // let mut closest_t = t_max;
+    // let mut closest_sphere = None;
+
+    let (closest_sphere, closest_t) = closest_intersection(o, d, t_min, t_max, scene);
+    // for sphere in &scene.spheres {
+    //     let (t1, t2) = intersect_ray_sphere(o, d, &sphere);
+    //     if t1 > t_min && t1 < t_max && t1 < closest_t {
+    //         closest_t = t1;
+    //         closest_sphere = Some(sphere);
+    //     }
+    //     if t2 > t_min && t2 < t_max && t2 < closest_t {
+    //         closest_t = t2;
+    //         closest_sphere = Some(sphere);
+    //     }
+    // }
     match closest_sphere {
         None => Rgb::from_ints(BACKGROUND_COLOR.0, BACKGROUND_COLOR.1, BACKGROUND_COLOR.2),
         Some(s) => {
@@ -163,8 +165,33 @@ fn intersect_ray_sphere(o: Vec3, d: Vec3, sphere: &Sphere) -> (f64, f64) {
     }
 }
 
+fn closest_intersection(
+    o: Vec3,
+    d: Vec3,
+    t_min: f64,
+    t_max: f64,
+    scene: &Scene,
+) -> (Option<&Sphere>, f64) {
+    let mut closest_t = t_max;
+    let mut closest_sphere = None;
+    for sphere in &scene.spheres {
+        let (t1, t2) = intersect_ray_sphere(o, d, &sphere);
+        if t1 > t_min && t1 < t_max && t1 < closest_t {
+            closest_t = t1;
+            closest_sphere = Some(sphere);
+        }
+        if t2 > t_min && t2 < t_max && t2 < closest_t {
+            closest_t = t2;
+            closest_sphere = Some(sphere);
+        }
+    }
+
+    (closest_sphere, closest_t)
+}
+
 fn compute_lighting(p: Vec3, n: Vec3, v: Vec3, s: i32, scene: &Scene) -> f64 {
     let mut i = 0.0;
+    let mut t_max = 0.0;
     for light in &scene.lights {
         if light.light_type == LightType::AMBIENT {
             i += light.intensity
@@ -172,22 +199,29 @@ fn compute_lighting(p: Vec3, n: Vec3, v: Vec3, s: i32, scene: &Scene) -> f64 {
             let mut l = Vec3::new(0.0, 0.0, 0.0);
             if light.light_type == LightType::POINT {
                 l = light.position.substract(p);
+                t_max = 1.0;
             } else {
                 l = light.direction;
+                t_max = f64::INFINITY;
             }
 
-            //Diffuse
-            let n_dot_l = n.dot(l);
-            if n_dot_l > 0.0 {
-                i += light.intensity * n_dot_l / (n.length() * l.length());
-            }
+            //Shadow Check
+            let shadow_sphere = closest_intersection(p, l, 0.001, t_max, scene).0;
 
-            //Specular
-            if s != -1 {
-                let r = n.scale(2.0).scale(n.dot(l)).substract(l);
-                let r_dot_v = r.dot(v);
-                if r_dot_v > 0.0 {
-                    i += light.intensity * (r_dot_v / (r.length() * v.length())).powi(s);
+            if let None = shadow_sphere {
+                //Diffuse
+                let n_dot_l = n.dot(l);
+                if n_dot_l > 0.0 {
+                    i += light.intensity * n_dot_l / (n.length() * l.length());
+                }
+
+                //Specular
+                if s != -1 {
+                    let r = n.scale(2.0).scale(n.dot(l)).substract(l);
+                    let r_dot_v = r.dot(v);
+                    if r_dot_v > 0.0 {
+                        i += light.intensity * (r_dot_v / (r.length() * v.length())).powi(s);
+                    }
                 }
             }
         }
