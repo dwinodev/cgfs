@@ -1,9 +1,9 @@
 // use rust_computer_graphics_from_scratch::canvas::{Canvas, Rgb};
 mod canvas;
 use crate::canvas::*;
-const WIDTH: usize = 600;
-const HEIGHT: usize = 600;
-const BACKGROUND_COLOR: (i16, i16, i16) = (255, 255, 255);
+const WIDTH: usize = 1000;
+const HEIGHT: usize = 1000;
+const BACKGROUND_COLOR: (i16, i16, i16) = (0, 0, 0);
 const VIEWPORT_WIDTH: f64 = 1.0;
 const VIEWPORT_HEIGHT: f64 = 1.0;
 const PROJECTION_PLANE_D: f64 = 1.0;
@@ -21,6 +21,7 @@ fn main() {
         1.0,
         Rgb::from_ints(255, 0, 0),
         500,
+        0.2,
     ));
 
     scene.spheres.push(Sphere::new(
@@ -28,6 +29,7 @@ fn main() {
         1.0,
         Rgb::from_ints(0, 0, 255),
         500,
+        0.3,
     ));
 
     scene.spheres.push(Sphere::new(
@@ -35,6 +37,7 @@ fn main() {
         1.0,
         Rgb::from_ints(0, 255, 0),
         10,
+        0.4,
     ));
 
     scene.spheres.push(Sphere::new(
@@ -42,6 +45,7 @@ fn main() {
         5000.0,
         Rgb::from_ints(255, 255, 0),
         1000,
+        0.5,
     ));
 
     scene.lights.push(Light::new(
@@ -84,8 +88,9 @@ fn main() {
             for x in -cw / 2..cw / 2 {
                 for y in -ch / 2..ch / 2 {
                     let d = canvas_to_viewport(x, y);
-                    let color = trace_ray(o, d, 1.0, f64::INFINITY, &scene);
-                    my_canvas.put_pixel(x, y, &color);
+                    let recursion_depth = 3;
+                    let color = trace_ray(o, d, 1.0, f64::INFINITY, recursion_depth, &scene);
+                    my_canvas.put_pixel(x, y, &color.clamp());
                 }
             }
 
@@ -100,8 +105,9 @@ fn main() {
         for x in -cw / 2..cw / 2 {
             for y in -ch / 2..ch / 2 {
                 let d = canvas_to_viewport(x, y);
-                let color = trace_ray(o, d, 1.0, f64::INFINITY, &scene);
-                my_canvas.put_pixel(x, y, &color);
+                let recursion_depth = 3;
+                let color = trace_ray(o, d, 1.0, f64::INFINITY, recursion_depth, &scene);
+                my_canvas.put_pixel(x, y, &color.clamp());
             }
         }
         my_canvas.display_until_exit();
@@ -116,7 +122,7 @@ fn canvas_to_viewport(x: i32, y: i32) -> Vec3 {
     )
 }
 
-fn trace_ray(o: Vec3, d: Vec3, t_min: f64, t_max: f64, scene: &Scene) -> Rgb {
+fn trace_ray(o: Vec3, d: Vec3, t_min: f64, t_max: f64, recursion_depth: i32, scene: &Scene) -> Rgb {
     // let mut closest_t = t_max;
     // let mut closest_sphere = None;
 
@@ -138,10 +144,23 @@ fn trace_ray(o: Vec3, d: Vec3, t_min: f64, t_max: f64, scene: &Scene) -> Rgb {
             let p = o.add(d.scale(closest_t));
             let n = p.substract(s.center);
             let n = n.normalize();
+            let local_color =
+                s.color
+                    .multiply_by(compute_lighting(p, n, d.scale(-1.0), s.specular, scene));
 
-            s.color
-                .multiply_by(compute_lighting(p, n, d.scale(-1.0), s.specular, scene))
-                .clamp()
+            let reflectivity = s.reflective;
+
+            if recursion_depth <= 0 || reflectivity <= 0.0 {
+                local_color
+            } else {
+                let r = reflect_ray(d.scale(-1.0), n);
+                let reflected_color =
+                    trace_ray(p, r, 0.001, f64::INFINITY, recursion_depth - 1, scene);
+
+                local_color
+                    .multiply_by(1.0 - reflectivity)
+                    .add(&reflected_color.multiply_by(reflectivity))
+            }
         }
     }
 }
@@ -217,7 +236,7 @@ fn compute_lighting(p: Vec3, n: Vec3, v: Vec3, s: i32, scene: &Scene) -> f64 {
 
                 //Specular
                 if s != -1 {
-                    let r = n.scale(2.0).scale(n.dot(l)).substract(l);
+                    let r = reflect_ray(l, n);
                     let r_dot_v = r.dot(v);
                     if r_dot_v > 0.0 {
                         i += light.intensity * (r_dot_v / (r.length() * v.length())).powi(s);
@@ -227,6 +246,10 @@ fn compute_lighting(p: Vec3, n: Vec3, v: Vec3, s: i32, scene: &Scene) -> f64 {
         }
     }
     i
+}
+
+fn reflect_ray(r: Vec3, n: Vec3) -> Vec3 {
+    n.scale(2.0).scale(n.dot(r)).substract(r)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -279,14 +302,16 @@ struct Sphere {
     radius: f64,
     color: Rgb,
     specular: i32,
+    reflective: f64,
 }
 impl Sphere {
-    fn new(center: Vec3, radius: f64, color: Rgb, specular: i32) -> Self {
+    fn new(center: Vec3, radius: f64, color: Rgb, specular: i32, reflective: f64) -> Self {
         Self {
             center,
             radius,
             color,
             specular,
+            reflective,
         }
     }
 }
