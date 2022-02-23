@@ -1,6 +1,6 @@
 // use rust_computer_graphics_from_scratch::canvas::{Canvas, Rgb};
-mod canvas_dwino;
-use crate::canvas_dwino::*;
+mod canvas;
+use crate::canvas::*;
 const WIDTH: usize = 600;
 const HEIGHT: usize = 600;
 const BACKGROUND_COLOR: (i16, i16, i16) = (255, 255, 255);
@@ -20,24 +20,28 @@ fn main() {
         Vec3::new(0.0, -5001.0, 0.0),
         5000.0,
         Rgb::from_ints(255, 255, 0),
+        1000,
     ));
 
     scene.spheres.push(Sphere::new(
         Vec3::new(0.0, -1.0, 3.0),
         1.0,
         Rgb::from_ints(255, 0, 0),
+        500,
     ));
 
     scene.spheres.push(Sphere::new(
         Vec3::new(2.0, 0.0, 4.0),
         1.0,
         Rgb::from_ints(0, 0, 255),
+        500,
     ));
 
     scene.spheres.push(Sphere::new(
         Vec3::new(-2.0, 0.0, 4.0),
         1.0,
         Rgb::from_ints(0, 255, 0),
+        10,
     ));
 
     scene.lights.push(Light::new(
@@ -70,10 +74,12 @@ fn main() {
 
     if ANIMATED {
         while my_canvas.window.is_open() && !my_canvas.window.is_key_down(minifb::Key::Escape) {
-            scene.spheres[0].center.y -= 0.001;
-            scene.spheres[1].center.y += 0.01;
-            scene.spheres[2].center.y += 0.02;
-            scene.spheres[3].center.y += 0.03;
+            // scene.spheres[0].center.y -= 0.001;
+            // scene.spheres[1].center.y += 0.01;
+            // scene.spheres[2].center.y += 0.02;
+            // scene.spheres[3].center.y += 0.03;
+            scene.lights[1].position.y += 0.1;
+            scene.lights[1].position.x += 0.1;
 
             for x in -cw / 2..cw / 2 {
                 for y in -ch / 2..ch / 2 {
@@ -131,7 +137,9 @@ fn trace_ray(o: Vec3, d: Vec3, t_min: f64, t_max: f64, scene: &Scene) -> Rgb {
             let n = p.substract(s.center);
             let n = n.normalize();
 
-            s.color.multiply_by(compute_lighting(p, n, scene))
+            s.color
+                .multiply_by(compute_lighting(p, n, d.scale(-1.0), s.specular, scene))
+                .clamp()
         }
     }
 }
@@ -155,7 +163,7 @@ fn intersect_ray_sphere(o: Vec3, d: Vec3, sphere: &Sphere) -> (f64, f64) {
     }
 }
 
-fn compute_lighting(p: Vec3, n: Vec3, scene: &Scene) -> f64 {
+fn compute_lighting(p: Vec3, n: Vec3, v: Vec3, s: i32, scene: &Scene) -> f64 {
     let mut i = 0.0;
     for light in &scene.lights {
         if light.light_type == LightType::AMBIENT {
@@ -163,20 +171,26 @@ fn compute_lighting(p: Vec3, n: Vec3, scene: &Scene) -> f64 {
         } else {
             let mut l = Vec3::new(0.0, 0.0, 0.0);
             if light.light_type == LightType::POINT {
-                l = light.direction.substract(p);
+                l = light.position.substract(p);
             } else {
                 l = light.direction;
             }
 
+            //Diffuse
             let n_dot_l = n.dot(l);
-
-            //println!("n_dot_l = {}", n.dot(l));
             if n_dot_l > 0.0 {
-                //println!("{} - {} {} {} ", i, n_dot_l, n.length(), l.length());
                 i += light.intensity * n_dot_l / (n.length() * l.length());
             }
+
+            //Specular
+            if s != -1 {
+                let r = n.scale(2.0).scale(n.dot(l)).substract(l);
+                let r_dot_v = r.dot(v);
+                if r_dot_v > 0.0 {
+                    i += light.intensity * (r_dot_v / (r.length() * v.length())).powi(s);
+                }
+            }
         }
-        //println!("{:?} - {} - {}", light.light_type, light.intensity, i);
     }
     i
 }
@@ -230,13 +244,15 @@ struct Sphere {
     center: Vec3,
     radius: f64,
     color: Rgb,
+    specular: i32,
 }
 impl Sphere {
-    fn new(center: Vec3, radius: f64, color: Rgb) -> Self {
+    fn new(center: Vec3, radius: f64, color: Rgb, specular: i32) -> Self {
         Self {
             center,
             radius,
             color,
+            specular,
         }
     }
 }
